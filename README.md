@@ -8,6 +8,8 @@ Anthropic can still link a commit to its session, since the session transcript r
 
 ## Commands
 
+`kairn --help` describes these commands for a Claude Code session that meets the hook, and every hook failure points to it.
+
 - `kairn keygen` writes a new secret key to `$XDG_CONFIG_HOME/kairn/secret.key`, or `~/.config/kairn/secret.key`, and prints the public key. It refuses to overwrite an existing key, since every earlier ciphertext would become unreadable.
 - `kairn seal <public-key> <message-file>` is the hook. It reads two IDs, and either of them may be absent:
   - The local ID is the UUID in `CLAUDE_CODE_SESSION_ID`, which also names the transcript `~/.claude/projects/<project>/<UUID>.jsonl` on the machine that ran the session.

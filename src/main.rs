@@ -29,9 +29,27 @@ const V1_PLAINTEXT_LEN: usize = REMOTE_ID_PREFIX.len() + REMOTE_ID_DIGITS;
 const V2_PLAINTEXT_LEN: usize = 32;
 const BRAILLE_BASE: u32 = 0x2800;
 const SECRET_KEY_FILE: &str = "secret.key";
-const SEAL_HINT: &str = "Committing with --no-verify would publish the session URL.";
-const USAGE: &str =
-    "usage: kairn keygen | kairn seal <public-key> <message-file> | kairn open <rev>";
+const SEAL_HINT: &str = "Committing with --no-verify would publish the session URL. \
+    `kairn --help` explains the hook.";
+const USAGE: &str = "usage: kairn keygen | kairn seal <public-key> <message-file> | kairn open <rev> \
+    | kairn --help";
+const HELP: &str = "\
+kairn keeps Claude Code session URLs out of public commit messages. It runs as a git
+commit-msg hook and seals the session of each commit into a `Cairn:` line, which only the
+holder of the secret key can read.
+
+kairn seal <public-key> <message-file>
+    The commit-msg hook. It replaces each `Claude-Session: <URL>` line with a `Cairn:` line,
+    and also seals the session IDs in CLAUDE_CODE_SESSION_ID and
+    CLAUDE_CODE_BRIDGE_SESSION_ID. Committing with --no-verify would publish the session
+    URL.
+
+kairn open <rev>
+    Prints the local session ID and the session URL of each `Cairn:` line of a commit.
+
+kairn keygen
+    Creates a secret key, unless one exists, and prints its public key.
+";
 
 /// Each ID is a nonzero 128-bit value, since a zero half of the v2 plaintext marks an absent ID.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -89,6 +107,7 @@ fn run() -> Result<()> {
                 }
             }
         }
+        ["--help"] => print!("{HELP}"),
         _ => return Err(USAGE.into()),
     }
     Ok(())

@@ -175,3 +175,13 @@ fn open_fails_on_a_commit_without_cairn() {
     assert!(sandbox.commit(&[], "test: plain").status.success());
     assert!(!sandbox.try_run(KAIRN, &["open", "HEAD"]).status.success());
 }
+
+#[test]
+fn help_describes_the_hook() {
+    let sandbox = Sandbox::new();
+    let help = String::from_utf8(sandbox.run(KAIRN, &["--help"]).stdout).unwrap();
+    assert!(
+        help.contains("kairn seal <public-key> <message-file>"),
+        "{help}"
+    );
+}
