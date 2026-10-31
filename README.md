@@ -40,9 +40,17 @@ git config --global hook.kairn.command 'kairn seal <public-key>'
 git config --global hook.kairn.event commit-msg
 ```
 
+A Claude Code cloud session gets the hook when the setup script of its cloud environment runs `cloud-setup.sh` with the public key:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/karin0/kairn/main/cloud-setup.sh | bash -s -- <public-key>
+```
+
+The script declares the hook first, so a failed install of kairn makes git abort every commit. It then upgrades git from the git-core PPA when git is older than 2.54, and builds kairn from the main branch with `cargo install`, so each new session runs the latest kairn.
+
 Git runs hooks declared in the configuration before the repository's own `.git/hooks/commit-msg`, which still runs, and appends the message file path to the command.
 
-Three paths still write the plaintext trailer: `git commit --no-verify`, which skips every `commit-msg` hook, git before 2.54, which ignores hooks declared in the configuration, and any environment without the hook, such as a Claude Code cloud session. Rebase, cherry-pick, and plain amend keep the message as it is, and a sealed message stays sealed.
+Three paths still write the plaintext trailer: `git commit --no-verify`, which skips every `commit-msg` hook, git before 2.54, which ignores hooks declared in the configuration, and any environment without the hook, such as a Claude Code cloud session whose setup script does not run `cloud-setup.sh`. Rebase, cherry-pick, and plain amend keep the message as it is, and a sealed message stays sealed.
 
 Claude Code also ends each pull request description it writes with the bare session URL. No git hook sees a pull request description, so the URL must be deleted by hand before the pull request is created.
 

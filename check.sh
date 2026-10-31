@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-shellcheck -S style check.sh
+shellcheck -S style ./*.sh
 cargo fmt --check
 cargo clippy --all-targets
 cargo test
