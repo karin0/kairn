@@ -140,6 +140,12 @@ fn commit_with_an_unknown_session_url_aborts() {
         "test: seal\n\nClaude-Session: https://example.com/session_abc",
     );
     assert!(!commit.status.success());
+    let stderr = String::from_utf8(commit.stderr).unwrap();
+    assert!(
+        stderr.starts_with("kairn: commit-msg hook rejected the commit: line 3: "),
+        "{stderr}"
+    );
+    assert!(stderr.contains("--no-verify"), "{stderr}");
     assert!(
         !sandbox
             .try_run("git", &["rev-parse", "HEAD"])

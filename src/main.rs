@@ -4,7 +4,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitCode, Stdio};
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -15,6 +15,8 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 const SESSION_TRAILER: &str = "Claude-Session:";
 const SESSION_URL_PREFIX: &str = "https://claude.ai/code/session_";
+/// Any line holding this text, in any letter case, would publish a session URL.
+const SESSION_URL_MARK: &str = "claude.ai/code/session_";
 const CAIRN_TRAILER: &str = "Cairn:";
 const LOCAL_ID_VAR: &str = "CLAUDE_CODE_SESSION_ID";
 const BRIDGE_ID_VAR: &str = "CLAUDE_CODE_BRIDGE_SESSION_ID";
@@ -27,6 +29,7 @@ const V1_PLAINTEXT_LEN: usize = REMOTE_ID_PREFIX.len() + REMOTE_ID_DIGITS;
 const V2_PLAINTEXT_LEN: usize = 32;
 const BRAILLE_BASE: u32 = 0x2800;
 const SECRET_KEY_FILE: &str = "secret.key";
+const SEAL_HINT: &str = "Committing with --no-verify would publish the session URL.";
 const USAGE: &str =
     "usage: kairn keygen | kairn seal <public-key> <message-file> | kairn open <rev>";
 
@@ -40,8 +43,8 @@ struct Session {
 impl Session {
     fn from_env() -> Result<Self> {
         Ok(Self {
-            local: env_id(LOCAL_ID_VAR, parse_uuid)?,
-            remote: env_id(BRIDGE_ID_VAR, |value| {
+            local: env_id(LOCAL_ID_VAR, "UUID", parse_uuid)?,
+            remote: env_id(BRIDGE_ID_VAR, "session_<ID>", |value| {
                 value
                     .strip_prefix(BRIDGE_ID_PREFIX)
                     .and_then(parse_remote_id)
@@ -57,7 +60,17 @@ impl Session {
     }
 }
 
-fn main() -> Result<()> {
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("kairn: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
     match args
         .iter()
@@ -66,16 +79,8 @@ fn main() -> Result<()> {
         .as_slice()
     {
         ["keygen"] => println!("{}", encode_key(keygen(&kairn_dir()?)?.as_bytes())),
-        ["seal", key, path] => {
-            let key = PublicKey::from(decode_key(key)?);
-            let ambient = Session::from_env()?;
-            let path = Path::new(path);
-            let message = at(path, fs::read_to_string(path))?;
-            at(
-                path,
-                fs::write(path, seal_message(&key, &message, ambient)?),
-            )?;
-        }
+        ["seal", key, path] => seal(key, Path::new(path))
+            .map_err(|e| format!("commit-msg hook rejected the commit: {e}\n{SEAL_HINT}"))?,
         ["open", rev] => {
             let key = read_secret_key(&kairn_dir()?)?;
             for session in open_commit(&key, rev)? {
@@ -89,18 +94,32 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn seal(key: &str, path: &Path) -> Result<()> {
+    let key = PublicKey::from(decode_key(key)?);
+    let ambient = Session::from_env()?;
+    let message = at(path, fs::read_to_string(path))?;
+    at(
+        path,
+        fs::write(path, seal_message(&key, &message, ambient)?),
+    )
+}
+
 fn at<T>(path: &Path, result: io::Result<T>) -> Result<T> {
     result.map_err(|e| format!("{}: {e}", path.display()).into())
 }
 
-fn env_id(name: &str, parse: impl Fn(&str) -> Option<u128>) -> Result<Option<u128>> {
+fn env_id(name: &str, form: &str, parse: impl Fn(&str) -> Option<u128>) -> Result<Option<u128>> {
     env::var_os(name)
         .filter(|value| !value.is_empty())
         .map(|value| {
-            value
-                .to_str()
-                .and_then(&parse)
-                .ok_or_else(|| format!("invalid {name}: {}", value.display()).into())
+            value.to_str().and_then(&parse).ok_or_else(|| {
+                format!(
+                    "{name} is not a {form}: {}. \
+                        Claude Code set an unexpected value, so report it to the user.",
+                    value.display()
+                )
+                .into()
+            })
         })
         .transpose()
 }
@@ -193,20 +212,42 @@ fn format_remote_id(mut id: u128) -> String {
 fn seal_message(key: &PublicKey, message: &str, ambient: Session) -> Result<String> {
     let mut sealed = String::with_capacity(message.len());
     let mut has_cairn = false;
-    for line in message.split_inclusive('\n') {
+    for (number, line) in (1..).zip(message.split_inclusive('\n')) {
         let body = line.trim_end_matches(['\n', '\r']);
         has_cairn |= trailer_value(body, CAIRN_TRAILER).is_some();
         let Some(value) = trailer_value(body, SESSION_TRAILER) else {
+            if body.to_ascii_lowercase().contains(SESSION_URL_MARK) {
+                return Err(format!(
+                    "line {number} holds a session URL outside a {SESSION_TRAILER} line. \
+                    Move the URL into a line `{SESSION_TRAILER} <URL>`, or delete it."
+                )
+                .into());
+            }
             sealed.push_str(line);
             continue;
         };
-        let remote = value
+        let id = value
             .trim()
             .strip_prefix(SESSION_URL_PREFIX)
-            .and_then(parse_remote_id)
-            .ok_or_else(|| format!("unknown session URL:{value}"))?;
-        if ambient.remote.is_some_and(|bridge| bridge != remote) {
-            return Err(format!("{BRIDGE_ID_VAR} differs from session URL:{value}").into());
+            .ok_or_else(|| {
+                format!(
+                    "line {number}: {SESSION_TRAILER}{value} is not a session URL. \
+                    Write the URL of this session, or delete the line."
+                )
+            })?;
+        let remote = parse_remote_id(id).ok_or_else(|| {
+            format!(
+                "line {number}: {id} is not a valid session ID. \
+                Claude Code may have changed its session ID format, so report it to the user."
+            )
+        })?;
+        if let Some(bridge) = ambient.remote.filter(|&bridge| bridge != remote) {
+            return Err(format!(
+                "line {number}: {SESSION_TRAILER}{value} is another session than this one, \
+                {SESSION_URL_PREFIX}{}. Write the URL of this session, or delete the line.",
+                format_remote_id(bridge)
+            )
+            .into());
         }
         let session = Session {
             remote: Some(remote),
@@ -493,6 +534,44 @@ mod tests {
         ] {
             let message = format!("fix: x\n\n{SESSION_TRAILER} {value}\n");
             assert!(seal_message(&key, &message, Session::default()).is_err());
+        }
+    }
+
+    #[test]
+    fn seal_message_reports_an_unknown_session_id_format() {
+        let key = SecretKey::generate(&mut OsRng).public_key();
+        for (value, reported) in [
+            ("https://example.com/session_abc", false),
+            (
+                "https://claude.ai/code/session_01AbCdEfGhJkMnPqRsTuVwX0",
+                true,
+            ),
+            (
+                "https://claude.ai/code/session_02AbCdEfGhJkMnPqRsTuVwXyZ",
+                true,
+            ),
+        ] {
+            let message = format!("fix: x\n\n{SESSION_TRAILER} {value}\n");
+            let error = seal_message(&key, &message, Session::default()).unwrap_err();
+            assert_eq!(
+                error.to_string().contains("report it to the user"),
+                reported,
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn seal_message_rejects_a_session_url_on_another_line() {
+        let key = SecretKey::generate(&mut OsRng).public_key();
+        for line in [
+            format!(" {SESSION_TRAILER} {URL}"),
+            format!("Claude-Session : {URL}"),
+            format!("see {}", URL.to_ascii_uppercase()),
+        ] {
+            let message = format!("fix: x\n\n{line}\n");
+            let error = seal_message(&key, &message, Session::default()).unwrap_err();
+            assert!(error.to_string().starts_with("line 3 "), "{error}");
         }
     }
 
