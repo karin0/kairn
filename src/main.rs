@@ -15,7 +15,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 const SESSION_TRAILER: &str = "Claude-Session:";
 const SESSION_URL_PREFIX: &str = "https://claude.ai/code/session_";
-const CAIRN_TRAILER: &str = "Cairn: ";
+const CAIRN_TRAILER: &str = "Cairn:";
 const BRAILLE_BASE: u32 = 0x2800;
 const SECRET_KEY_FILE: &str = "secret.key";
 const USAGE: &str =
@@ -93,11 +93,7 @@ fn seal_message(key: &PublicKey, message: &str) -> Result<String> {
     let mut sealed = String::with_capacity(message.len());
     for line in message.split_inclusive('\n') {
         let body = line.trim_end_matches(['\n', '\r']);
-        let Some(value) = body
-            .get(..SESSION_TRAILER.len())
-            .filter(|key| key.eq_ignore_ascii_case(SESSION_TRAILER))
-            .map(|_| &body[SESSION_TRAILER.len()..])
-        else {
+        let Some(value) = trailer_value(body, SESSION_TRAILER) else {
             sealed.push_str(line);
             continue;
         };
@@ -107,10 +103,17 @@ fn seal_message(key: &PublicKey, message: &str) -> Result<String> {
             .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric()))
             .ok_or_else(|| format!("unknown session URL:{value}"))?;
         sealed.push_str(CAIRN_TRAILER);
+        sealed.push(' ');
         sealed.push_str(&seal_session(key, id)?);
         sealed.push_str(&line[body.len()..]);
     }
     Ok(sealed)
+}
+
+fn trailer_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    line.get(..key.len())
+        .filter(|prefix| prefix.eq_ignore_ascii_case(key))
+        .map(|_| &line[key.len()..])
 }
 
 fn seal_session(key: &PublicKey, id: &str) -> Result<String> {
@@ -137,13 +140,7 @@ fn open_session(key: &SecretKey, value: &str) -> Result<String> {
 
 fn open_commit(key: &SecretKey, rev: &str) -> Result<Vec<String>> {
     let output = Command::new("git")
-        .args([
-            "log",
-            "-1",
-            "--format=%(trailers:key=Cairn,valueonly)",
-            "--end-of-options",
-            rev,
-        ])
+        .args(["log", "-1", "--format=%B", "--end-of-options", rev])
         // A partial clone would otherwise fetch a missing commit over the network.
         .env("GIT_NO_LAZY_FETCH", "1")
         .stderr(Stdio::inherit())
@@ -153,11 +150,11 @@ fn open_commit(key: &SecretKey, rev: &str) -> Result<Vec<String>> {
     }
     let urls = String::from_utf8(output.stdout)?
         .lines()
-        .filter(|line| !line.is_empty())
-        .map(|value| open_session(key, value))
+        .filter_map(|line| trailer_value(line, CAIRN_TRAILER))
+        .map(|value| open_session(key, value.trim()))
         .collect::<Result<Vec<_>>>()?;
     if urls.is_empty() {
-        return Err(format!("{rev} has no Cairn trailer").into());
+        return Err(format!("{rev} has no Cairn line").into());
     }
     Ok(urls)
 }
@@ -195,6 +192,7 @@ mod tests {
         let value = sealed
             .strip_prefix(head)
             .and_then(|tail| tail.strip_prefix(CAIRN_TRAILER))
+            .and_then(|tail| tail.strip_prefix(' '))
             .and_then(|tail| tail.strip_suffix("\r\n"))
             .unwrap();
         assert_eq!(open_session(&secret, value).unwrap(), URL);

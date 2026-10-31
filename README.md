@@ -9,8 +9,8 @@ Anthropic can still link a commit to its session, since the session transcript r
 ## Commands
 
 - `kairn keygen` writes a new secret key to `$XDG_CONFIG_HOME/kairn/secret.key`, or `~/.config/kairn/secret.key`, and prints the public key. It refuses to overwrite an existing key, since every earlier ciphertext would become unreadable.
-- `kairn seal <public-key> <message-file>` is the hook. It matches the `Claude-Session` key in any letter case, as git does for trailer keys. A `Claude-Session:` line whose value is not a session URL fails the hook, and git aborts the commit.
-- `kairn open <rev>` prints the session URL of every `Cairn` trailer of the commit.
+- `kairn seal <public-key> <message-file>` is the hook. It rewrites every line that starts with the `Claude-Session:` key in any letter case, as git matches trailer keys, including a line outside the final trailer paragraph. A `Claude-Session:` line whose value is not a session URL fails the hook, and git aborts the commit.
+- `kairn open <rev>` prints the session URL of every line of the commit message that starts with the `Cairn:` key, matched by the same rule as `seal`. A `Cairn:` line whose value is not a sealed box fails the command.
 
 ## Ciphertext format
 

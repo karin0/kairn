@@ -69,6 +69,19 @@ fn committed_session_url_is_sealed_and_opens() {
 }
 
 #[test]
+fn session_url_outside_the_trailer_block_opens() {
+    let sandbox = Sandbox::new();
+    let commit = sandbox.commit(&format!("test: seal\n\nClaude-Session: {URL}\n\nfooter"));
+    assert!(commit.status.success(), "{commit:?}");
+
+    let opened = sandbox.run(KAIRN, &["open", "HEAD"]);
+    assert_eq!(
+        String::from_utf8(opened.stdout).unwrap(),
+        format!("{URL}\n")
+    );
+}
+
+#[test]
 fn commit_with_an_unknown_session_url_aborts() {
     let sandbox = Sandbox::new();
     let commit = sandbox.commit("test: seal\n\nClaude-Session: https://example.com/session_abc");
