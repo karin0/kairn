@@ -1,0 +1,22 @@
+[package]
+name = 'kairn'
+version = '0.1.0'
+edition = '2024'
+
+[dependencies]
+base64 = '0.23.1'
+crypto_box = { version = '0.9.1', features = ['seal', 'std'] }
+
+[dev-dependencies]
+tempfile = '3.27.0'
+
+[lints.rust]
+warnings = 'deny'
+
+[lints.clippy]
+pedantic = { level = 'warn', priority = -1 }
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
