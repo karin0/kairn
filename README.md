@@ -42,7 +42,7 @@ git config --global hook.kairn.event commit-msg
 
 Git runs hooks declared in the configuration before the repository's own `.git/hooks/commit-msg`, which still runs, and appends the message file path to the command.
 
-Two paths still write the plaintext trailer: `git commit --no-verify`, which skips every `commit-msg` hook, and any environment without the hook, such as a Claude Code cloud session. Rebase, cherry-pick, and plain amend keep the message as it is, and a sealed message stays sealed.
+Three paths still write the plaintext trailer: `git commit --no-verify`, which skips every `commit-msg` hook, git before 2.54, which ignores hooks declared in the configuration, and any environment without the hook, such as a Claude Code cloud session. Rebase, cherry-pick, and plain amend keep the message as it is, and a sealed message stays sealed.
 
 Claude Code also ends each pull request description it writes with the bare session URL. No git hook sees a pull request description, so the URL must be deleted by hand before the pull request is created.
 
