@@ -32,6 +32,8 @@ Git runs hooks declared in the configuration before the repository's own `.git/h
 
 Two paths still write the plaintext trailer: `git commit --no-verify`, which skips every `commit-msg` hook, and any environment without the hook, such as a Claude Code cloud session. Rebase, cherry-pick, and plain amend keep the message as it is, and a sealed message stays sealed.
 
+Claude Code also ends each pull request description it writes with the bare session URL. No git hook sees a pull request description, so the URL must be deleted by hand before the pull request is created.
+
 ## Development
 
 `./check.sh` runs shellcheck, rustfmt, clippy, the tests, and the release build.
