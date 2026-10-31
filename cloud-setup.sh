@@ -28,4 +28,6 @@ if ! git_is_recent; then
     git_is_recent
 fi
 
-cargo install --locked --git https://github.com/karin0/kairn kairn
+curl -fsSL --max-time 60 -o /usr/local/bin/kairn \
+    https://github.com/karin0/kairn/releases/download/latest/kairn-x86_64-unknown-linux-musl
+chmod 755 /usr/local/bin/kairn

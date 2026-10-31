@@ -34,7 +34,7 @@ git config --global hook.kairn.command 'kairn seal <public-key>'
 git config --global hook.kairn.event commit-msg
 ```
 
-A Claude Code cloud session gets the hook when the setup script of its cloud environment runs `cloud-setup.sh`, which upgrades git when needed and builds kairn from the main branch:
+A Claude Code cloud session gets the hook when the setup script of its cloud environment runs `cloud-setup.sh`, which upgrades git when needed and downloads the x86_64 Linux binary that CI builds from the head of the main branch and publishes in the `latest` release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/karin0/kairn/main/cloud-setup.sh | bash -s -- <public-key>
